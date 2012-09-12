@@ -1,0 +1,12 @@
+Changes
+INSTALL
+LICENSE
+MANIFEST
+META.json
+META.yml
+Makefile.PL
+bin/masontidy
+lib/Mason/Tidy.pm
+lib/Mason/Tidy/t/Basic.pm
+t/01-use.t
+t/Basic.t

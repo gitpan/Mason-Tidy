@@ -1,0 +1,266 @@
+#!/usr/bin/perl
+use Getopt::Long;
+use File::Slurp;
+use Mason::Tidy;
+use Pod::Usage;
+use strict;
+use warnings;
+
+sub usage {
+    my $msg = shift;
+    print STDERR "$msg\n" if $msg;
+    require Pod::Usage;
+    Pod::Usage::pod2usage( { verbose => 1, output => \*STDERR } );
+}
+
+my ( $help, $replace, %params );
+GetOptions(
+    'h|help'              => \$help,
+    'r|replace'           => \$replace,
+    'indent-perl-block'   => \$params{indent_perl_block},
+    'perltidy-argv'       => \$params{perltidy_argv},
+    'perltidy-block-argv' => \$params{perltidy_block_argv},
+    'perltidy-line-argv'  => \$params{perltidy_line_argv},
+    'perltidy-subst-argv' => \$params{perltidy_subst_argv},
+) or usage();
+usage() if !@ARGV;
+Pod::Usage::pod2usage( { verbose => 2 } ) if $help;
+die "must pass -r/--replace with multiple filenames" if @ARGV > 1;
+
+%params =
+  map { ( $_, $params{$_} ) } grep { defined( $params{$_} ) } keys(%params);
+
+my $mt = Mason::Tidy->new(%params);
+foreach my $file (@ARGV) {
+    my $source = read_file($file);
+    my $dest   = $mt->tidy($source);
+    if ($replace) {
+        write_file( $file, $dest );
+    }
+    else {
+        print $dest;
+    }
+}
+
+1;
+
+
+
+=pod
+
+=head1 NAME
+
+masontidy - Tidy HTML::Mason / Mason components
+
+=head1 VERSION
+
+version 0.01
+
+=head1 SYNOPSIS
+
+    Tidy component, write to standard output:
+
+    % masontidy file.mc
+
+    Process component(s) in place:
+
+    % masontidy -r file1.mc [file2.mc ...]
+
+=head1 DESCRIPTION
+
+masontidy tidies L<Mason 1|HTML::Mason> and L<Mason 2|Mason> components, using
+L<perltidy|perltidy> to format the Perl code that can be embedded in various
+places in the component.  masontidy does not (yet) attempt to tidy the HTML or
+other non-Perl content in a component.
+
+For example, this:
+
+    <body>
+    %if($contents||$allow_empty) {
+      <ul>
+    %foreach my $line (@lines) {
+      <li>
+          <%2+(3-4)*6%>
+      </li>
+      <li><%  foo($.bar,$.baz,  $.bleah)%></li>
+    %}
+      </ul>
+    %}
+    </body>
+    
+    <%init>
+    my @articles = @{Blog::Article::Manager->get_articles(sort_by=>"create_time",limit=>5)};
+    </%init>  
+
+becomes this:
+
+    <body>
+    % if ( $contents || $allow_empty ) {
+      <ul>
+    %   foreach my $line (@lines) {
+      <li>
+          <% 2 + ( 3 - 4 ) * 6 %>
+      </li>
+      <li><% foo( $.bar, $.baz, $.bleah) %></li>
+    %   }
+      </ul>
+    %}
+    </body>
+
+    <%init>
+    my @articles =
+      @{ Blog::Article::Manager->get_articles
+         ( sort_by => "create_time", limit => 5 ) };
+    </%init>  
+
+This shows the three main categories of Perl in a component that can be tidied:
+
+=over
+
+=item *
+
+B<Perl blocks>. C<< <%init> >>, C<< <%perl> >>, etc.  These are tidied in
+isolation from one another.
+
+=item *
+
+B<%-lines>. These are indented relative to each other regardless of intervening
+non-Perl content, e.g. in the example above, the C<foreach> is indented inside
+the C<if>.
+
+By default, Perl lines are indented with 2 spaces instead of the normal 4
+spaces. This can be overriden with L</--perltidy-line-argv>.
+
+A single space is inserted after the '%'.
+
+=item *
+
+B<Perl expressions> inside C<< <% %> >> and C<< <& &> >> tags. A single space
+is inserted before and after the tidied expression if there isn't one already.
+
+=back
+
+=head1 INVOKING
+
+There are two ways to invoke C<masontidy>:
+
+=over
+
+=item *
+
+Specify a single file; the result will be written to standard output.
+
+=item *
+
+Specify one or more files with the -r/--replace flag; each file will be tidied
+in place.
+
+=back
+
+For more advanced options, consider using C<masontidy> with L<tidyall|tidyall>;
+it will let you read from standard input, write to files with a separate
+extension, backup files before overwriting, etc.
+
+=head1 COMMAND-LINE OPTIONS
+
+=over
+
+=item -r, --replace
+
+Modify file(s) in place instead of sending to standard output.
+
+=item --indent-perl-block
+
+Number of spaces to initially indent all lines inside a block of Perl. The
+default is 2, e.g.
+
+    <%init>
+      if ($foo) {
+          $bar = 6;
+      }
+    </%init>
+
+If you set this to 0, you'll get
+
+    <%init>
+    if ($foo) {
+        $bar = 6;
+    }
+    </%init>
+
+Note that this is independent from perltidy's indentation (in this case the
+default, 4 spaces).
+
+=item --perltidy-argv
+
+C<perltidy> arguments to use everywhere. e.g.
+
+    --perltidy-argv="-noll -l=78"
+
+=item --perltidy-line-argv
+
+Additional C<perltidy> arguments to use for Perl lines. Defaults to "-i=2"
+(indent 2 characters instead of the usual 4). You can pass "" (the empty
+string) to eliminate this exception.
+
+=item --perltidy-block-argv
+
+Additional C<perltidy> arguments to use for Perl blocks.
+
+=item --perltidy-tag-argv
+
+Additional C<perltidy> arguments to use for substitution tags.
+
+=item -h, --help       
+
+Print help message
+
+=back
+
+=head1 ERRORS
+
+Will throw a fatal error if a file cannot be tidied, such as when perltidy
+encounters bad Perl syntax. However, C<masontidy> is not intended to be, and
+should not be considered, a validator; it will remain silent on many syntax
+errors.
+
+=head1 LIBRARY API
+
+You can use L<Mason::Tidy|Mason::Tidy> to use this facility from inside another
+Perl script/library.
+
+=head1 CAVEATS / KNOWN BUGS
+
+=over
+
+=item *
+
+A %-line or C<< <% %> >> tag will never be split up into multiple lines
+regardless of how long it is.
+
+=item *
+
+C<< <% %> >> tags that span multiple lines are ignored.
+
+=item *
+
+Blocks that begin and end on the same line are ignored.
+
+=back
+
+=head1 AUTHOR
+
+Jonathan Swartz <swartz@pobox.com>
+
+=head1 COPYRIGHT AND LICENSE
+
+This software is copyright (c) 2011 by Jonathan Swartz.
+
+This is free software; you can redistribute it and/or modify it under
+the same terms as the Perl 5 programming language system itself.
+
+=cut
+
+
+__END__
+
