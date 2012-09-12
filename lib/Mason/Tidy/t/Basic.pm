@@ -1,6 +1,6 @@
 package Mason::Tidy::t::Basic;
 BEGIN {
-  $Mason::Tidy::t::Basic::VERSION = '0.01';
+  $Mason::Tidy::t::Basic::VERSION = '2.50';
 }
 use Mason::Tidy;
 use Test::More;

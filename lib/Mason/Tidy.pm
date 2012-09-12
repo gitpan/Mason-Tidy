@@ -1,6 +1,6 @@
 package Mason::Tidy;
 BEGIN {
-  $Mason::Tidy::VERSION = '0.01';
+  $Mason::Tidy::VERSION = '2.50';
 }
 use File::Slurp;
 use Method::Signatures::Simple;
@@ -281,7 +281,7 @@ Mason::Tidy - Engine for masontidy
 
 =head1 VERSION
 
-version 0.01
+version 2.50
 
 =head1 SYNOPSIS
 

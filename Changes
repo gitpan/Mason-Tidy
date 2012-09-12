@@ -2,6 +2,11 @@ Revision history for Mason-Tidy
 
 ** denotes an incompatible change
 
+2.50  Sep 12, 2012
+
+- Increase version number to avoid indexing problems w/old Mason 2 distributions
+- Declare --perltidy-argv, etc., to take a string value
+
 0.01  Sep 12, 2012
 
 - Initial version
