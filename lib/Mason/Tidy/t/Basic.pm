@@ -1,12 +1,9 @@
 package Mason::Tidy::t::Basic;
 BEGIN {
-  $Mason::Tidy::t::Basic::VERSION = '2.50';
+  $Mason::Tidy::t::Basic::VERSION = '2.51';
 }
 use Mason::Tidy;
-use Test::More;
-use strict;
-use warnings;
-use base qw(Test::Class);
+use Test::Class::Most parent => 'Test::Class';
 
 sub tidy {
     my %params  = @_;
@@ -14,7 +11,7 @@ sub tidy {
     my $desc    = $params{desc} or die "desc required";
     my $options = $params{options} || {};
 
-    my $mt = Mason::Tidy->new( %$options, perltidy_argv => '' );
+    my $mt = Mason::Tidy->new( %$options, perltidy_argv => '--noprofile' );
     my $dest = eval { $mt->tidy($source) };
     my $err = $@;
     if ( my $expect_error = $params{expect_error} ) {
@@ -124,8 +121,7 @@ sub test_tags : Tests {
     tidy(
         desc   => 'comp call tag',
         source => '<&/foo/bar,a=>5,b=>6&> text <&  $comp_path, str=>"foo"&>',
-        expect =>
-          '<& /foo/bar, a => 5, b => 6 &> text <& $comp_path, str => "foo" &>',
+        expect => '<& /foo/bar, a => 5, b => 6 &> text <& $comp_path, str => "foo" &>',
     );
 }
 

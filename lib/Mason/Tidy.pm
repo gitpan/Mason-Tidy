@@ -1,8 +1,9 @@
 package Mason::Tidy;
 BEGIN {
-  $Mason::Tidy::VERSION = '2.50';
+  $Mason::Tidy::VERSION = '2.51';
 }
 use File::Slurp;
+use Getopt::Long qw(GetOptionsFromArray);
 use Method::Signatures::Simple;
 use Moo;
 use Perl::Tidy qw();
@@ -54,6 +55,23 @@ method perl_block_names () {
 
 method mixed_block_names () {
     return qw(after augment around before def method override);
+}
+
+method get_options ($class: $argv, $params_ref) {
+    my %params;
+    my $result = GetOptionsFromArray(
+        $argv,
+        'h|help'                => \$params{help},
+        'r|replace'             => \$params{replace},
+        'indent-perl-block=i'   => \$params{indent_perl_block},
+        'perltidy-argv=s'       => \$params{perltidy_argv},
+        'perltidy-block-argv=s' => \$params{perltidy_block_argv},
+        'perltidy-line-argv=s'  => \$params{perltidy_line_argv},
+        'perltidy-subst-argv=s' => \$params{perltidy_subst_argv},
+    );
+    %$params_ref =
+      map { ( $_, $params{$_} ) } grep { defined( $params{$_} ) } keys(%params);
+    return $result;
 }
 
 method tidy ($source) {
@@ -281,7 +299,7 @@ Mason::Tidy - Engine for masontidy
 
 =head1 VERSION
 
-version 2.50
+version 2.51
 
 =head1 SYNOPSIS
 
@@ -325,6 +343,12 @@ C<indent_perl_block> here).
 
 Tidy component source I<$source> and return the tidied result. Throw fatal
 error if source cannot be tidied (e.g. invalid syntax).
+
+=item get_options ($argv, $params)
+
+Use C<Getopt::Long::GetOptions> to parse the options in I<$argv> and place
+params in I<$params> appropriate for passing into the constructor. Returns the
+return value of C<GetOptions>.
 
 =back
 

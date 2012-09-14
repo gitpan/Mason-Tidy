@@ -12,7 +12,7 @@ my %WriteMakefileArgs = (
   'ABSTRACT' => 'My great module',
   'AUTHOR' => 'Jonathan Swartz <swartz@pobox.com>',
   'BUILD_REQUIRES' => {
-    'Test::More' => '0'
+    'Test::Class::Most' => '0'
   },
   'CONFIGURE_REQUIRES' => {
     'ExtUtils::MakeMaker' => '6.30'
@@ -32,7 +32,7 @@ my %WriteMakefileArgs = (
     'Perl::Tidy' => '0',
     'Pod::Usage' => '0'
   },
-  'VERSION' => '2.50',
+  'VERSION' => '2.51',
   'test' => {
     'TESTS' => 't/*.t'
   }
