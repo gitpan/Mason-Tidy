@@ -24,15 +24,17 @@ my %WriteMakefileArgs = (
   'LICENSE' => 'perl',
   'NAME' => 'Mason::Tidy',
   'PREREQ_PM' => {
+    'Capture::Tiny' => '0',
     'File::Slurp' => '0',
+    'File::Temp' => '0',
     'Getopt::Long' => '0',
-    'IO::Scalar' => '0',
+    'IPC::System::Simple' => '0',
     'Method::Signatures::Simple' => '1.02',
     'Moo' => '0.0091010',
     'Perl::Tidy' => '0',
     'Pod::Usage' => '0'
   },
-  'VERSION' => '2.51',
+  'VERSION' => '2.52',
   'test' => {
     'TESTS' => 't/*.t'
   }

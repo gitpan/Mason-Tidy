@@ -44,7 +44,7 @@ masontidy - Tidy HTML::Mason / Mason components
 
 =head1 VERSION
 
-version 2.51
+version 2.52
 
 =head1 SYNOPSIS
 
@@ -162,7 +162,7 @@ Modify file(s) in place instead of sending to standard output.
 =item --indent-perl-block
 
 Number of spaces to initially indent all lines inside a block of Perl. The
-default is 2, e.g.
+default is 2:
 
     <%init>
       if ($foo) {
@@ -170,7 +170,7 @@ default is 2, e.g.
       }
     </%init>
 
-If you set this to 0, you'll get
+With --indent-perl-block 0:
 
     <%init>
     if ($foo) {
@@ -178,8 +178,7 @@ If you set this to 0, you'll get
     }
     </%init>
 
-Note that this is independent from perltidy's indentation (in this case the
-default, 4 spaces).
+Note that this is independent from perltidy's indentation settings.
 
 =item --perltidy-argv
 

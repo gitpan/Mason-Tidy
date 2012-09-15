@@ -20,9 +20,11 @@ no_index:
   file:
     - lib/Mason/Tidy/Util.pm
 requires:
+  Capture::Tiny: 0
   File::Slurp: 0
+  File::Temp: 0
   Getopt::Long: 0
-  IO::Scalar: 0
+  IPC::System::Simple: 0
   Method::Signatures::Simple: 1.02
   Moo: 0.0091010
   Perl::Tidy: 0
@@ -30,4 +32,4 @@ requires:
 resources:
   bugtracker: http://rt.cpan.org/NoAuth/Bugs.html?Dist=Mason-Tidy
   repository: git://github.com/jonswar/perl-mason-tidy.git
-version: 2.51
+version: 2.52

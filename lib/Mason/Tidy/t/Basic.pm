@@ -1,6 +1,6 @@
 package Mason::Tidy::t::Basic;
 BEGIN {
-  $Mason::Tidy::t::Basic::VERSION = '2.51';
+  $Mason::Tidy::t::Basic::VERSION = '2.52';
 }
 use Mason::Tidy;
 use Test::Class::Most parent => 'Test::Class';
