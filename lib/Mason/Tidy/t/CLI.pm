@@ -1,6 +1,6 @@
 package Mason::Tidy::t::CLI;
 BEGIN {
-  $Mason::Tidy::t::CLI::VERSION = '2.52';
+  $Mason::Tidy::t::CLI::VERSION = '2.53';
 }
 use Capture::Tiny qw(capture_merged);
 use File::Slurp;

@@ -34,7 +34,7 @@ my %WriteMakefileArgs = (
     'Perl::Tidy' => '0',
     'Pod::Usage' => '0'
   },
-  'VERSION' => '2.52',
+  'VERSION' => '2.53',
   'test' => {
     'TESTS' => 't/*.t'
   }

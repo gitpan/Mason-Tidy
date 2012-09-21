@@ -1,6 +1,6 @@
 package Mason::Tidy::t::Basic;
 BEGIN {
-  $Mason::Tidy::t::Basic::VERSION = '2.52';
+  $Mason::Tidy::t::Basic::VERSION = '2.53';
 }
 use Mason::Tidy;
 use Test::Class::Most parent => 'Test::Class';
@@ -43,24 +43,20 @@ my @ids = (1,2);
 ',
         expect => '
 <%init>
-  if ($foo) {
-      my @ids = ( 1, 2 );
-  }
+if ($foo) {
+    my @ids = ( 1, 2 );
+}
 </%init>
 '
     );
 
+    # This isn't ideal - would prefer it compressed to a single newline - but
+    # both the <%init> and </%init> grab onto one of the newlines
+    #
     tidy(
         desc   => 'empty init section',
-        source => '
-<%init>
-
-</%init>
-',
-        expect => '
-<%init>
-</%init>
-'
+        source => "<%init>\n\n\n\n</%init>",
+        expect => "<%init>\n\n</%init>",
     );
 }
 
@@ -96,19 +92,90 @@ content
     );
 }
 
-sub test_perl_lines : Tests {
+sub test_perl_lines_and_perl_blocks : Tests {
     tidy(
         desc   => 'perl lines',
         source => '
-%if($foo  )   {  
+%my $d = 3;
+<%perl>
+if($foo  )   {
+</%perl>
 %my @ids = (1,2);
+<%perl>
+my $foo = 3;
+if($bar) {
+my $s = 9;
+</%perl>
+% my $baz = 4;
+%}
 %    }  
 ',
         expect => '
-% if ($foo) {
-%   my @ids = ( 1, 2 );
+% my $d = 3;
+<%perl>
+  if ($foo) {
+</%perl>
+%     my @ids = ( 1, 2 );
+<%perl>
+      my $foo = 3;
+      if ($bar) {
+          my $s = 9;
+</%perl>
+%         my $baz = 4;
+%     }
 % }
 '
+    );
+}
+
+sub test_foo : Tests {
+    tidy(
+        desc   => 'no newlines',
+        source => "<%init>my \$foo=5;</%init>",
+        expect => "<%init>my \$foo = 5;</%init>"
+    );
+}
+
+sub test_blocks_and_newlines : Tests {
+    tidy(
+        desc   => 'no newlines',
+        source => "<%perl>my \$foo=5;</%perl>",
+        expect => "<%perl>my \$foo=5;</%perl>"
+    );
+    tidy(
+        desc   => 'newline before </%perl>',
+        source => "<%perl>my \$foo=5;\n  </%perl>",
+        expect => "<%perl>my \$foo=5;\n  </%perl>"
+    );
+    tidy(
+        desc   => 'newline after <%perl>',
+        source => "<%perl>\nmy \$foo=5;</%perl>",
+        expect => "<%perl>\nmy \$foo=5;</%perl>"
+    );
+    tidy(
+        desc   => 'newlines after <%perl> and before </%perl>',
+        source => "<%perl>\nmy \$foo=5;\n</%perl>",
+        expect => "<%perl>\n  my \$foo = 5;\n</%perl>"
+    );
+    tidy(
+        desc   => 'no newlines',
+        source => "<%init>my \$foo=5;</%init>",
+        expect => "<%init>my \$foo = 5;</%init>"
+    );
+    tidy(
+        desc   => 'newline before </%init>',
+        source => "<%init>my \$foo=5;\n  </%init>",
+        expect => "<%init>my \$foo = 5;\n  </%init>"
+    );
+    tidy(
+        desc   => 'newline after <%init>',
+        source => "<%init>\nmy \$foo=5;</%init>",
+        expect => "<%init>\nmy \$foo = 5;</%init>"
+    );
+    tidy(
+        desc   => 'newlines after <%init> and before </%init>',
+        source => "<%init>\nmy \$foo=5;\n</%init>",
+        expect => "<%init>\nmy \$foo = 5;\n</%init>"
     );
 }
 
@@ -140,12 +207,12 @@ sub test_filter_invoke : Tests {
 ',
         expect => '
 % $.Trim( 3, 17 ) {{
-%   sub { uc( $_[0] ) } {{
-%     $.Fobernate() {{
+%     sub { uc( $_[0] ) } {{
+%         $.Fobernate() {{
    This string will be trimmed, uppercased
    and fobernated
+%         }}
 %     }}
-%   }}
 % }}
 '
     );
@@ -167,9 +234,9 @@ s/abc/def/;
 Hi
 
 <%filter>
-  if (/abc/) {
-      s/abc/def/;
-  }
+if (/abc/) {
+    s/abc/def/;
+}
 </%filter>
 '
     );
@@ -209,9 +276,9 @@ sub test_perltidy_argv : Tests {
 ',
         expect => '
 % if ($foo) {
-%   if ($bar) {
-%     baz();
-%   }
+%     if ($bar) {
+%         baz();
+%     }
 % }
 '
     );
@@ -280,14 +347,49 @@ if ($foo) {
     );
 
     tidy(
-        desc   => 'indent_perl_block 4',
+        desc    => 'indent_perl_block 4',
+        options => { indent_perl_block => 4 },
+        source  => $source,
+        expect  => '
+<%perl>
+    if ($foo) {
+        $bar = 6;
+    }
+</%perl>
+'
+    );
+}
+
+sub test_indent_block : Tests {
+    my $source = '
+<%init>
+    if ($foo) {
+$bar = 6;
+  }
+</%init>
+';
+    tidy(
+        desc   => 'indent_block 0 (default)',
         source => $source,
         expect => '
-<%perl>
+<%init>
+if ($foo) {
+    $bar = 6;
+}
+</%init>
+'
+    );
+    return;
+    tidy(
+        desc    => 'indent_block 2',
+        options => { indent_block => 2 },
+        source  => $source,
+        expect  => '
+<%init>
   if ($foo) {
       $bar = 6;
   }
-</%perl>
+</%init>
 '
     );
 }
@@ -297,6 +399,11 @@ sub test_errors : Tests {
         desc         => 'syntax error',
         source       => '% if ($foo) {',
         expect_error => qr/final indentation level/,
+    );
+    tidy(
+        desc         => 'no matching close block',
+        source       => "<%init>\nmy \$foo = bar;</%ini>",
+        expect_error => qr/no matching end tag/,
     );
 }
 
@@ -340,16 +447,16 @@ some text
 
 % if ( $contents || $allow_empty ) {
   <ul>
-%   foreach my $line (@lines) {
+%     foreach my $line (@lines) {
 <%perl>
-  dothis();
-  andthat();
+          dothis();
+          andthat();
 </%perl>
   <li>
       <% 2 + ( 3 - 4 ) * 6 %>
   </li>
   <li><% foo( $.bar, $.baz, $.bleah ) %></li>
-%   }
+%     }
   </ul>
 % }
 
@@ -361,9 +468,9 @@ some filtered text
 
 <%method foo>
 % if ( defined($bar) ) {
-%   if ($write_list) {
+%     if ($write_list) {
 even more text
-%   }
+%     }
 % }
 </%method>
 '
