@@ -1,6 +1,6 @@
 package Mason::Tidy;
 BEGIN {
-  $Mason::Tidy::VERSION = '2.53';
+  $Mason::Tidy::VERSION = '2.54';
 }
 use File::Slurp;
 use Getopt::Long qw(GetOptionsFromArray);
@@ -15,6 +15,7 @@ my $marker_count = 0;
 # Public
 has 'indent_block'        => ( is => 'ro', default => sub { 0 } );
 has 'indent_perl_block'   => ( is => 'ro', default => sub { 2 } );
+has 'mason_version'       => ( is => 'ro', required => 1, isa => \&validate_mason_version );
 has 'perltidy_argv'       => ( is => 'ro', default => sub { '' } );
 has 'perltidy_block_argv' => ( is => 'ro', default => sub { '' } );
 has 'perltidy_line_argv'  => ( is => 'ro', default => sub { '' } );
@@ -26,6 +27,10 @@ has '_is_mixed_block'   => ( is => 'lazy' );
 has '_marker_prefix'    => ( is => 'ro', default => sub { '__masontidy__' } );
 has '_open_block_regex' => ( is => 'lazy' );
 has '_subst_tag_regex'  => ( is => 'lazy' );
+
+func validate_mason_version () {
+    die "must be 1 or 2" unless $_[0] =~ /^[12]$/;
+}
 
 method _build__is_mixed_block () {
     return { map { ( $_, 1 ) } $self->mixed_block_names };
@@ -58,26 +63,10 @@ method mixed_block_names () {
     return qw(after augment around before def method override);
 }
 
-method get_options ($class: $argv, $params_ref) {
-    my %params;
-    my $result = GetOptionsFromArray(
-        $argv,
-        'h|help'                => \$params{help},
-        'r|replace'             => \$params{replace},
-        'indent-block=i'        => \$params{indent_block},
-        'indent-perl-block=i'   => \$params{indent_perl_block},
-        'perltidy-argv=s'       => \$params{perltidy_argv},
-        'perltidy-block-argv=s' => \$params{perltidy_block_argv},
-        'perltidy-line-argv=s'  => \$params{perltidy_line_argv},
-        'perltidy-tag-argv=s'   => \$params{perltidy_tag_argv},
-    );
-    %$params_ref =
-      map { ( $_, $params{$_} ) } grep { defined( $params{$_} ) } keys(%params);
-    return $result;
-}
-
 method tidy ($source) {
-    return $self->tidy_method($source);
+    my $final = $self->tidy_method($source);
+    $final .= "\n" if substr( $final, -1, 1 ) ne "\n";
+    return $final;
 }
 
 method tidy_method ($source) {
@@ -85,21 +74,24 @@ method tidy_method ($source) {
     my @elements    = ();
     my $add_element = sub { push( @elements, [@_] ) };
 
-    my $last_line = scalar(@lines) - 1;
+    my $last_line        = scalar(@lines) - 1;
+    my $open_block_regex = $self->_open_block_regex;
+    my $mason1           = $self->mason_version == 1;
+    my $mason2           = $self->mason_version == 2;
 
     for ( my $cur_line = 0 ; $cur_line <= $last_line ; $cur_line++ ) {
         my $line = $lines[$cur_line];
 
         # Begin Mason 2 filter invocation
         #
-        if ( $line =~ /^%\s*(.*)\{\{\s*/ ) {
+        if ( $mason2 && $line =~ /^%\s*(.*)\{\{\s*/ ) {
             $add_element->( 'perl_line', "given (__filter($1)) {" );
             next;
         }
 
         # End Mason 2 filter invocation
         #
-        if ( $line =~ /^%\s*\}\}\s*/ ) {
+        if ( $mason2 && $line =~ /^%\s*\}\}\s*/ ) {
             $add_element->( 'perl_line', "} # __end filter" );
             next;
         }
@@ -127,7 +119,25 @@ method tidy_method ($source) {
             }
         }
 
-        # Everything else goes untouched
+        # Other blocks untouched
+        #
+        if ( my ($block_type) = ( $line =~ /$open_block_regex/ ) ) {
+            my $end_line;
+            foreach my $this_line ( $cur_line + 1 .. $last_line ) {
+                if ( $lines[$this_line] =~ m{</%$block_type>} ) {
+                    $end_line = $this_line;
+                    last;
+                }
+            }
+            if ($end_line) {
+                my $block_contents = join( "\n", @lines[ $cur_line .. $end_line ] );
+                $add_element->( 'block', $block_contents );
+                $cur_line = $end_line;
+                next;
+            }
+        }
+
+        # Single line of text untouched
         #
         $add_element->( 'text', $line );
     }
@@ -152,12 +162,19 @@ method tidy_method ($source) {
         else {
             # Convert back filter invocation
             #
-            $line =~ s/given\s*\(\s*__filter\s*\(\s*(.*?)\s*\)\s*\)\s*\{/$1 \{\{/;
-            $line =~ s/\}\s*\#\s*__end filter/\}\}/;
+            if ($mason2) {
+                $line =~ s/given\s*\(\s*__filter\s*\(\s*(.*?)\s*\)\s*\)\s*\{/$1 \{\{/;
+                $line =~ s/\}\s*\#\s*__end filter/\}\}/;
+            }
 
             if ( my ($real_line) = ( $line =~ /(.*?)\s*\#\s*__perl_block/ ) ) {
-                my $spacer = scalar( ' ' x $self->indent_perl_block );
-                push( @final_lines, $spacer . rtrim($real_line) );
+                if ( $real_line =~ /\S/ ) {
+                    my $spacer = scalar( ' ' x $self->indent_perl_block );
+                    push( @final_lines, $spacer . rtrim($real_line) );
+                }
+                else {
+                    push( @final_lines, '' );
+                }
             }
             else {
                 push( @final_lines, "% " . $line );
@@ -169,7 +186,6 @@ method tidy_method ($source) {
     # Tidy content in blocks other than <%perl>
     #
     my %replacements;
-    my $open_block_regex = $self->_open_block_regex;
     undef pos($final);
     while ( $final =~ /$open_block_regex[\t ]*\n?/mg ) {
         my ( $block_type, $block_args ) = ( $1, $2 );
@@ -321,13 +337,13 @@ Mason::Tidy - Engine for masontidy
 
 =head1 VERSION
 
-version 2.53
+version 2.54
 
 =head1 SYNOPSIS
 
     use Mason::Tidy;
 
-    my $mc = Mason::Tidy->new();
+    my $mc = Mason::Tidy->new(mason_version => 2);
     my $dest = $mc->tidy($source);
 
 =head1 DESCRIPTION
@@ -341,7 +357,11 @@ You can call this API from your own program instead of executing C<masontidy>.
 
 =over
 
+=item indent_block
+
 =item indent_perl_block
+
+=item mason_version (required)
 
 =item perltidy_argv
 
@@ -349,7 +369,7 @@ You can call this API from your own program instead of executing C<masontidy>.
 
 =item perltidy_line_argv
 
-=item perltidy_subst_argv
+=item perltidy_tag_argv
 
 These options are the same as the equivalent C<masontidy> command-line options,
 replacing dashes with underscore (e.g. the C<--indent-per-block> option becomes

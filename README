@@ -2,12 +2,12 @@ NAME
     Mason::Tidy - Engine for masontidy
 
 VERSION
-    version 2.53
+    version 2.54
 
 SYNOPSIS
         use Mason::Tidy;
 
-        my $mc = Mason::Tidy->new();
+        my $mc = Mason::Tidy->new(mason_version => 2);
         my $dest = $mc->tidy($source);
 
 DESCRIPTION
@@ -18,11 +18,13 @@ DESCRIPTION
     `masontidy'.
 
 CONSTRUCTOR PARAMETERS
+    indent_block
     indent_perl_block
+    mason_version (required)
     perltidy_argv
     perltidy_block_argv
     perltidy_line_argv
-    perltidy_subst_argv
+    perltidy_tag_argv
         These options are the same as the equivalent `masontidy'
         command-line options, replacing dashes with underscore (e.g. the
         `--indent-per-block' option becomes `indent_perl_block' here).

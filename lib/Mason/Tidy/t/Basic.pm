@@ -1,6 +1,6 @@
 package Mason::Tidy::t::Basic;
 BEGIN {
-  $Mason::Tidy::t::Basic::VERSION = '2.53';
+  $Mason::Tidy::t::Basic::VERSION = '2.54';
 }
 use Mason::Tidy;
 use Test::Class::Most parent => 'Test::Class';
@@ -8,8 +8,16 @@ use Test::Class::Most parent => 'Test::Class';
 sub tidy {
     my %params  = @_;
     my $source  = $params{source} or die "source required";
-    my $desc    = $params{desc} or die "desc required";
-    my $options = $params{options} || {};
+    my $expect  = $params{expect};
+    my $options = { mason_version => 2, %{ $params{options} || {} } };
+    my $desc    = $params{desc};
+    ($desc) = ( ( caller(1) )[3] =~ /([^:]+$)/ ) if !$desc;
+
+    $source =~ s/\\n/\n/g;
+    if ( defined($expect) ) {
+        $expect =~ s/\\n/\n/g;
+        $expect .= "\n" if $expect !~ /\n$/;    # since masontidy enforces final newline
+    }
 
     my $mt = Mason::Tidy->new( %$options, perltidy_argv => '--noprofile' );
     my $dest = eval { $mt->tidy($source) };
@@ -19,8 +27,8 @@ sub tidy {
         is( $dest, undef, "no dest returned - $desc" );
     }
     else {
-        is( $err, '', "no error - $desc" );
-        is( trim($dest), trim( $params{expect} ), "expected content - $desc" );
+        is( $err,  '',      "no error - $desc" );
+        is( $dest, $expect, "expected content - $desc" );
     }
 }
 
@@ -92,6 +100,60 @@ content
     );
 }
 
+sub test_args : Tests {
+    tidy(
+        desc   => 'perl lines',
+        source => '
+<%args>
+$a
+@b
+%c
+$d => "foo"
+@e => (1,2,3)
+%f => (a=>5, b=>6)
+</%args>
+',
+        expect => '
+<%args>
+$a
+@b
+%c
+$d => "foo"
+@e => (1,2,3)
+%f => (a=>5, b=>6)
+</%args>
+'
+    );
+}
+
+sub test_final_newline : Tests {
+    tidy(
+        desc   => 'one perl line with final newline',
+        source => '% my $foo = 5;\n',
+        expect => '% my $foo = 5;\n',
+    );
+    tidy(
+        desc   => 'one perl line without final newline',
+        source => '% my $foo = 5;',
+        expect => '% my $foo = 5;\n',
+    );
+    tidy(
+        desc   => 'two perl lines with final newline',
+        source => '% my $foo = 5;\n% my $bar = 6;\n',
+        expect => '% my $foo = 5;\n% my $bar = 6;\n',
+    );
+    tidy(
+        desc   => 'two perl lines without final newline',
+        source => '% my $foo = 5;\n% my $bar = 6;',
+        expect => '% my $foo = 5;\n% my $bar = 6;\n',
+    );
+    tidy(
+        desc   => 'two perl lines with two final newlines',
+        source => '% my $foo = 5;\n% my $bar = 6;\n\n',
+        expect => '% my $foo = 5;\n% my $bar = 6;\n',
+    );
+}
+
 sub test_perl_lines_and_perl_blocks : Tests {
     tidy(
         desc   => 'perl lines',
@@ -128,14 +190,6 @@ my $s = 9;
     );
 }
 
-sub test_foo : Tests {
-    tidy(
-        desc   => 'no newlines',
-        source => "<%init>my \$foo=5;</%init>",
-        expect => "<%init>my \$foo = 5;</%init>"
-    );
-}
-
 sub test_blocks_and_newlines : Tests {
     tidy(
         desc   => 'no newlines',
@@ -158,6 +212,16 @@ sub test_blocks_and_newlines : Tests {
         expect => "<%perl>\n  my \$foo = 5;\n</%perl>"
     );
     tidy(
+        desc   => 'double embedded newlines in <%perl>',
+        source => '<%perl>\n\nmy $foo = 3;\n\nmy $bar = 4;\n\n</%perl>',
+        expect => '<%perl>\n\n  my $foo = 3;\n\n  my $bar = 4;\n\n</%perl>',
+    );
+    tidy(
+        desc   => 'triple embedded newlines in <%perl>',
+        source => '<%perl>\n\n\nmy $foo = 3;\n\n\nmy $bar = 4;\n\n\n</%perl>',
+        expect => '<%perl>\n\n\n  my $foo = 3;\n\n\n  my $bar = 4;\n\n\n</%perl>',
+    );
+    tidy(
         desc   => 'no newlines',
         source => "<%init>my \$foo=5;</%init>",
         expect => "<%init>my \$foo = 5;</%init>"
@@ -176,6 +240,11 @@ sub test_blocks_and_newlines : Tests {
         desc   => 'newlines after <%init> and before </%init>',
         source => "<%init>\nmy \$foo=5;\n</%init>",
         expect => "<%init>\nmy \$foo = 5;\n</%init>"
+    );
+    tidy(
+        desc   => 'double embedded newlines in <%init>',
+        source => '<%init>\n\nmy $foo = 3;\n\nmy $bar = 4;\n\n</%init>',
+        expect => '<%init>\nmy $foo = 3;\nmy $bar = 4;\n</%init>',
     );
 }
 
@@ -363,9 +432,11 @@ if ($foo) {
 sub test_indent_block : Tests {
     my $source = '
 <%init>
+
     if ($foo) {
 $bar = 6;
   }
+
 </%init>
 ';
     tidy(
@@ -379,7 +450,6 @@ if ($foo) {
 </%init>
 '
     );
-    return;
     tidy(
         desc    => 'indent_block 2',
         options => { indent_block => 2 },
@@ -404,6 +474,23 @@ sub test_errors : Tests {
         desc         => 'no matching close block',
         source       => "<%init>\nmy \$foo = bar;</%ini>",
         expect_error => qr/no matching end tag/,
+    );
+}
+
+sub test_random_bugs : Tests {
+    tidy(
+        desc    => 'final double brace (mason 1)',
+        options => { mason_version => 1 },
+        source  => '
+% if ($foo) {
+% if ($bar) {
+% }}
+',
+        expect => '
+% if ($foo) {
+%     if ($bar) {
+% }}
+'
     );
 }
 

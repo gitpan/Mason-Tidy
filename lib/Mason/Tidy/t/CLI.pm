@@ -1,57 +1,71 @@
 package Mason::Tidy::t::CLI;
 BEGIN {
-  $Mason::Tidy::t::CLI::VERSION = '2.53';
+  $Mason::Tidy::t::CLI::VERSION = '2.54';
 }
-use Capture::Tiny qw(capture_merged);
+use Capture::Tiny qw(capture capture_merged);
 use File::Slurp;
 use File::Temp qw(tempdir);
 use Mason::Tidy;
+use Mason::Tidy::App;
 use IPC::System::Simple qw(capturex);
+use IPC::Run3 qw(run3);
 use Test::Class::Most parent => 'Test::Class';
 
-my $noprofile = "--perltidy-argv='--noprofile'";
+local $ENV{MASONTIDY_OPT};
 
-sub test_get_options : Tests {
-    my $try = sub {
-        my ( $argv, $expect_params, $expect_result ) = @_;
-        my %params;
-        my $result = Mason::Tidy->get_options( $argv, \%params );
-        cmp_deeply( \%params, $expect_params, "params" );
-        is( $result ? 1 : 0, $expect_result ? 1 : 0, "result" );
-    };
-    $try->( [], {}, 1 );
-    $try->( [qw(--indent-perl-block 2 -r)], { indent_perl_block => 2, replace => 1 }, 1 );
-    my $out =
-      capture_merged { $try->( [qw(--indent-perl-block 2 --bad)], { indent_perl_block => 2 }, 0 ) };
-    like( $out, qr/Unknown option: bad/ );
-}
+my @std_argv = ( "--perltidy-argv='--noprofile'", "-m=2" );
 
 sub test_cli : Tests {
-    my $out;
-
-    $out = capture_merged { system( $^X, "bin/masontidy", "-h" ) };
-    like( $out, qr/masontidy - Tidy/ );
+    my ( $out, $err );
 
     my $tempdir = tempdir( 'name-XXXX', TMPDIR => 1, CLEANUP => 1 );
     write_file( "$tempdir/comp1.mc", "<%2+2%>" );
     write_file( "$tempdir/comp2.mc", "<%4+4%>" );
-    $out = capture_merged {
-        system( $^X, "bin/masontidy", $noprofile, "-r", "$tempdir/comp1.mc", "$tempdir/comp2.mc" );
+    write_file( "$tempdir/comp3.mc", "%if (foo){\n%bar\n%}\n" );
+
+    my $cli = sub {
+        local @ARGV = @_;
+        ( $out, $err ) = capture {
+            Mason::Tidy::App->run();
+        };
+        is( $err, "", "err empty" );
     };
-    is( read_file("$tempdir/comp1.mc"), "<% 2 + 2 %>", "comp1" );
-    is( read_file("$tempdir/comp2.mc"), "<% 4 + 4 %>", "comp2" );
+
+    $cli->( "-r", "$tempdir/comp1.mc", "$tempdir/comp2.mc", @std_argv );
+    is( $out,                           "",              "out empty" );
+    is( read_file("$tempdir/comp1.mc"), "<% 2 + 2 %>\n", "comp1" );
+    is( read_file("$tempdir/comp2.mc"), "<% 4 + 4 %>\n", "comp2" );
 
     write_file( "$tempdir/comp1.mc", "<%2+2%>" );
-    $out = capture_merged {
-        system( $^X, "bin/masontidy", $noprofile, "$tempdir/comp1.mc" );
-    };
-    is( $out, "<% 2 + 2 %>" );
-    is( read_file("$tempdir/comp1.mc"), "<%2+2%>", "comp1" );
+    $cli->( "$tempdir/comp1.mc", @std_argv );
+    is( $out,                           "<% 2 + 2 %>\n", "single file - out" );
+    is( read_file("$tempdir/comp1.mc"), "<%2+2%>",       "comp1" );
 
-    $out = capture_merged {
-        system( $^X, "bin/masontidy", $noprofile, "$tempdir/comp1.mc", "$tempdir/comp2.mc" );
-    };
-    like( $out, qr/must pass -r/ );
+    $cli->( "$tempdir/comp3.mc", @std_argv );
+    is( $out, "% if (foo) {\n%     bar\n% }\n", "no options" );
+    $cli->( '--perltidy-line-argv="-i=2"', "$tempdir/comp3.mc", @std_argv );
+    is( $out, "% if (foo) {\n%   bar\n% }\n", "no options" );
+
+    throws_ok { $cli->("$tempdir/comp1.mc") } qr/mason-version required/;
+    throws_ok { $cli->( "-m", "3", "$tempdir/comp1.mc" ) } qr/must be 1 or 2/;
+    throws_ok { $cli->( "-p", "$tempdir/comp1.mc", @std_argv ) } qr/pipe not compatible/;
+    throws_ok { $cli->(@std_argv) } qr/must pass either/;
+    throws_ok { $cli->( "$tempdir/comp1.mc", "$tempdir/comp2.mc", @std_argv ) }
+    qr/must pass .* with multiple filenames/;
+
+    local $ENV{MASONTIDY_OPT} = "-p";
+    my $in = "<%2+2%>\n<%4+4%>\n";
+    run3( [ $^X, "bin/masontidy", @std_argv ], \$in, \$out, \$err );
+    is( $err, "", "pipe - no error" );
+    is( $out, "<% 2 + 2 %>\n<% 4 + 4 %>\n", "pipe - output" );
+}
+
+sub test_usage : Tests {
+    my $out;
+
+    return "author only" unless ( $ENV{AUTHOR_TESTING} );
+    $out = capture_merged { system( $^X, "bin/masontidy", "-h" ) };
+    like( $out, qr/Usage: masontidy/ );
 }
 
 1;
