@@ -1,6 +1,6 @@
 package Mason::Tidy;
 BEGIN {
-  $Mason::Tidy::VERSION = '2.54';
+  $Mason::Tidy::VERSION = '2.55';
 }
 use File::Slurp;
 use Getopt::Long qw(GetOptionsFromArray);
@@ -337,7 +337,7 @@ Mason::Tidy - Engine for masontidy
 
 =head1 VERSION
 
-version 2.54
+version 2.55
 
 =head1 SYNOPSIS
 

@@ -1,6 +1,6 @@
 package Mason::Tidy::t::CLI;
 BEGIN {
-  $Mason::Tidy::t::CLI::VERSION = '2.54';
+  $Mason::Tidy::t::CLI::VERSION = '2.55';
 }
 use Capture::Tiny qw(capture capture_merged);
 use File::Slurp;
@@ -8,7 +8,6 @@ use File::Temp qw(tempdir);
 use Mason::Tidy;
 use Mason::Tidy::App;
 use IPC::System::Simple qw(capturex);
-use IPC::Run3 qw(run3);
 use Test::Class::Most parent => 'Test::Class';
 
 local $ENV{MASONTIDY_OPT};
@@ -52,10 +51,16 @@ sub test_cli : Tests {
     throws_ok { $cli->(@std_argv) } qr/must pass either/;
     throws_ok { $cli->( "$tempdir/comp1.mc", "$tempdir/comp2.mc", @std_argv ) }
     qr/must pass .* with multiple filenames/;
+}
 
+sub test_pipe : Tests {
+    return "author only" unless ( $ENV{AUTHOR_TESTING} );
+
+    require IPC::Run3;
     local $ENV{MASONTIDY_OPT} = "-p";
     my $in = "<%2+2%>\n<%4+4%>\n";
-    run3( [ $^X, "bin/masontidy", @std_argv ], \$in, \$out, \$err );
+    my ( $out, $err );
+    IPC::Run3::run3( [ $^X, "bin/masontidy", @std_argv ], \$in, \$out, \$err );
     is( $err, "", "pipe - no error" );
     is( $out, "<% 2 + 2 %>\n<% 4 + 4 %>\n", "pipe - output" );
 }

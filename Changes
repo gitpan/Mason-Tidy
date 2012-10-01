@@ -2,6 +2,10 @@ Revision history for Mason-Tidy
 
 ** denotes an incompatible change
 
+2.55  Sep 30, 2012
+
+- Remove undeclared dependency on IPC::Run3
+
 2.54  Sep 30, 2012
 
 - Add required option -m/--mason-version, as a few syntactic elements like "% }}" must be
