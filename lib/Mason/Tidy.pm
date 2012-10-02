@@ -1,6 +1,6 @@
 package Mason::Tidy;
 BEGIN {
-  $Mason::Tidy::VERSION = '2.55';
+  $Mason::Tidy::VERSION = '2.56';
 }
 use File::Slurp;
 use Getopt::Long qw(GetOptionsFromArray);
@@ -70,8 +70,11 @@ method tidy ($source) {
 }
 
 method tidy_method ($source) {
-    my @lines       = split( /\n/, $source );
-    my @elements    = ();
+    return $source if $source !~ /\S/;
+
+    my @lines = split( /\n/, $source, -1 );
+    pop(@lines) if @lines && $lines[-1] eq '';
+    my @elements = ();
     my $add_element = sub { push( @elements, [@_] ) };
 
     my $last_line        = scalar(@lines) - 1;
@@ -153,9 +156,14 @@ method tidy_method ($source) {
         destination => \my $tidied_perl,
         argv        => $self->perltidy_line_argv . " -fnl -fbl",
     );
+    if ( substr( $untidied_perl, -1, 1 ) ne "\n" && substr( $tidied_perl, -1, 1 ) eq "\n" ) {
+        substr( $tidied_perl, -1, 1 ) = "";
+    }
 
+    my @tidied_lines = split( /\n/, $tidied_perl, -1 );
+    @tidied_lines = ('') if !@tidied_lines;
     my @final_lines = ();
-    foreach my $line ( split( /\n/, $tidied_perl ) ) {
+    foreach my $line (@tidied_lines) {
         if ( my $marker = $self->marker_in_line($line) ) {
             push( @final_lines, $self->restore($marker)->[1] );
         }
@@ -177,7 +185,7 @@ method tidy_method ($source) {
                 }
             }
             else {
-                push( @final_lines, "% " . $line );
+                push( @final_lines, "%" . ( $line =~ /\S/ ? " " : "" ) . $line );
             }
         }
     }
@@ -185,24 +193,36 @@ method tidy_method ($source) {
 
     # Tidy content in blocks other than <%perl>
     #
-    my %replacements;
+    my @replacements;
     undef pos($final);
     while ( $final =~ /$open_block_regex[\t ]*\n?/mg ) {
         my ( $block_type, $block_args ) = ( $1, $2 );
         my $start_pos = pos($final);
         if ( $final =~ /(\n?[\t ]*<\/%$block_type>)/g ) {
             my $length = pos($final) - $start_pos - length($1);
-            my $block_contents = substr( $final, $start_pos, $length );
-            $replacements{$block_contents} =
-              $self->handle_block( $block_type, $block_args, $block_contents );
+            my $untidied_block_contents = substr( $final, $start_pos, $length );
+            my $tidied_block_contents =
+              $self->handle_block( $block_type, $block_args, $untidied_block_contents );
+            push( @replacements,
+                [ $start_pos, $length, $untidied_block_contents, $tidied_block_contents ] );
         }
         else {
             die sprintf( "no matching end tag for '<%%%s%s>' at char %d",
                 $block_type, $block_args || '', $start_pos );
         }
     }
-    while ( my ( $src, $dest ) = each(%replacements) ) {
-        $final =~ s/\Q$src\E/$dest/;
+    my $offset = 0;
+    foreach my $replacement (@replacements) {
+        my ( $start_pos, $length, $untidied_block_contents, $tidied_block_contents ) =
+          @$replacement;
+        my $adjusted_start_pos = $start_pos + $offset;
+        my $actual = substr( $final, $adjusted_start_pos, $length );
+        unless ( $actual eq $untidied_block_contents ) {
+            die sprintf( "assert failure: start pos %s, length %s - '%s' ne '%s'",
+                $adjusted_start_pos, $length, $actual, $untidied_block_contents );
+        }
+        substr( $final, $adjusted_start_pos, $length ) = $tidied_block_contents;
+        $offset += length($tidied_block_contents) - length($untidied_block_contents);
     }
 
     # Tidy Perl in <% %> tags
@@ -210,9 +230,9 @@ method tidy_method ($source) {
     my $subst_tag_regex = $self->_subst_tag_regex;
     $final =~ s/$subst_tag_regex/"<% " . $self->tidy_subst_expr($1) . " %>"/ge;
 
-    # Tidy Perl in <% %> tags
+    # Tidy Perl in <& &> and <&| &> tags
     #
-    $final =~ s/<&(.*?)&>/"<& " . $self->tidy_compcall_expr($1) . " &>"/ge;
+    $final =~ s/(<&\|?)(.*?)&>/"$1 " . $self->tidy_compcall_expr($2) . " &>"/ge;
 
     return $final;
 }
@@ -337,7 +357,7 @@ Mason::Tidy - Engine for masontidy
 
 =head1 VERSION
 
-version 2.55
+version 2.56
 
 =head1 SYNOPSIS
 

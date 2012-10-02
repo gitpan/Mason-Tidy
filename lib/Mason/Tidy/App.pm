@@ -1,6 +1,6 @@
 package Mason::Tidy::App;
 BEGIN {
-  $Mason::Tidy::App::VERSION = '2.55';
+  $Mason::Tidy::App::VERSION = '2.56';
 }
 use File::Slurp;
 use Getopt::Long qw(GetOptionsFromArray);
@@ -34,8 +34,8 @@ method run () {
     if ( my $envvar = $ENV{MASONTIDY_OPT} ) {
         push( @argv, split( /\s+/, $envvar ) );
     }
-    usage() if !@argv;
     my $source = $_[0];
+    usage() if !@argv && !$source;
 
     my ( %params, $help, $pipe, $replace );
     GetOptionsFromArray(
@@ -94,7 +94,7 @@ Mason::Tidy::App - Implements masontidy command
 
 =head1 VERSION
 
-version 2.55
+version 2.56
 
 =head1 SEE ALSO
 

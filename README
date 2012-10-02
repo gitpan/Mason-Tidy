@@ -2,7 +2,7 @@ NAME
     Mason::Tidy - Engine for masontidy
 
 VERSION
-    version 2.55
+    version 2.56
 
 SYNOPSIS
         use Mason::Tidy;
