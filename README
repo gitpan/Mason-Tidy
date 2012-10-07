@@ -2,7 +2,7 @@ NAME
     Mason::Tidy - Engine for masontidy
 
 VERSION
-    version 2.56
+    version 2.57
 
 SYNOPSIS
         use Mason::Tidy;
@@ -33,11 +33,6 @@ METHODS
     tidy ($source)
         Tidy component source *$source* and return the tidied result. Throw
         fatal error if source cannot be tidied (e.g. invalid syntax).
-
-    get_options ($argv, $params)
-        Use `Getopt::Long::GetOptions' to parse the options in *$argv* and
-        place params in *$params* appropriate for passing into the
-        constructor. Returns the return value of `GetOptions'.
 
 AUTHOR
     Jonathan Swartz <swartz@pobox.com>

@@ -1,5 +1,5 @@
 {
-   "abstract" : "My great module",
+   "abstract" : "Tidy Perl code in Mason templates",
    "author" : [
       "Jonathan Swartz <swartz@pobox.com>"
    ],
@@ -59,6 +59,6 @@
          "web" : "https://github.com/jonswar/perl-mason-tidy"
       }
    },
-   "version" : "2.56"
+   "version" : "2.57"
 }
 

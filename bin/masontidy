@@ -17,7 +17,7 @@ masontidy - Tidy HTML::Mason / Mason components
 
 =head1 VERSION
 
-version 2.56
+version 2.57
 
 =head1 SYNOPSIS
 
@@ -202,7 +202,8 @@ or
 
 =item --perltidy-line-argv
 
-Additional C<perltidy> arguments to use for Perl lines.
+Additional C<perltidy> arguments to use for Perl lines. "-fnl -fbl" will always
+be used, to preserve existing newlines.
 
 =item --perltidy-block-argv
 
@@ -211,10 +212,7 @@ Additional C<perltidy> arguments to use for code blocks.
 =item --perltidy-tag-argv
 
 Additional C<perltidy> arguments to use for C<< <% %> >> and C<< <& &> >> tags.
-For example, to ensure that these tags are never broken out onto multiple lines
-regardless of how long they are:
-
-    --perltidy-tag-argv="-fnl"  # short for --freeze-newlines
+"-fnl -fbl" will always be used, to preserve existing newlines.
 
 =item -h, --help       
 
@@ -249,9 +247,9 @@ C<< <% %> >> tags that span multiple lines are ignored.
 
 =item *
 
-The line structure of C<< %-lines >>, C<< <% %> >> tags, and C<< <%perl> >>
-blocks will not be altered; i.e. multiple lines will not be merged and single
-lines will not be split, regardless of their length.
+The line structure of C<< %-lines >>, C<< <% %> >> tags, C<< <& &> >> and C<<
+<%perl> >> blocks will not be altered; i.e. multiple lines will not be merged
+and single lines will not be split, regardless of their length.
 
 =back
 

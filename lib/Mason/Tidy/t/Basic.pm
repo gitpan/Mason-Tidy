@@ -1,6 +1,6 @@
 package Mason::Tidy::t::Basic;
 BEGIN {
-  $Mason::Tidy::t::Basic::VERSION = '2.56';
+  $Mason::Tidy::t::Basic::VERSION = '2.57';
 }
 use Mason::Tidy;
 use Test::Class::Most parent => 'Test::Class';
@@ -20,7 +20,6 @@ sub tidy {
     $source =~ s/\\n/\n/g;
     if ( defined($expect) ) {
         $expect =~ s/\\n/\n/g;
-        $expect .= "\n" if $expect !~ /\n$/;    # since masontidy enforces final newline
     }
 
     my $mt = Mason::Tidy->new( %$options, perltidy_argv => '--noprofile' );
@@ -75,28 +74,21 @@ if ($foo) {
 sub test_mixed_sections : Tests {
     tidy(
         desc   => 'method',
-        source => '
-<%method foo>
-%if (  $foo) {
-content
-%}
-</%method>
-',
-        expect => '
-<%method foo>
-% if ($foo) {
-content
-% }
-</%method>
-'
+        source => '<%method foo>\n%if (  $foo) {\ncontent\n%}\n</%method>\n',
+        expect => '<%method foo>\n% if ($foo) {\ncontent\n% }\n</%method>\n'
     );
 }
 
 sub test_empty_method : Tests {
-    tidy( source => '<%method foo>\n</%method>' );
-    tidy( source => '<%method foo>\n%\n</%method>\n', );
+    tidy( source => 'foo\nbar\n' );
+    tidy( source => '<%method foo>\n</%method>\n' );
+    tidy( source => '<%method foo>\n%\n</%method>\n' );
     tidy( source => '<%method foo>\n\n</%method>' );
     tidy( source => '\n<%method foo>\n%\n%\n</%method>\n' );
+}
+
+sub test_text_section : Tests {
+    tidy( source => '<%text>\n% my $foo=5\n<%3+5%>\n</%text>\n' );
 }
 
 sub test_backslashes : Tests {
@@ -116,6 +108,12 @@ sub test_multiple_methods : Tests {
 bar();
 </%perl>
 </%method>
+
+<%method .baz>
+%if (1) {
+<%blargh%>
+%}
+</%method>
 ',
         expect => '
 <%method foo>
@@ -126,6 +124,12 @@ bar();
 <%perl>
   bar();
 </%perl>
+</%method>
+
+<%method .baz>
+% if (1) {
+<% blargh %>
+% }
 </%method>
 '
     );
@@ -157,21 +161,11 @@ $d => "foo"
     );
 }
 
-sub test_final_newline : Tests {
-    tidy( source => '% my $foo = 5;\n', );
-    tidy( source => '% my $foo = 5;', expect => '% my $foo = 5;\n', );
-    tidy( source => '% my $foo = 5;\n% my $bar = 6;\n', );
-    tidy(
-        source => '% my $foo = 5;\n% my $bar = 6;',
-        expect => '% my $foo = 5;\n% my $bar = 6;\n'
-    );
-    tidy(
-        source => '% my $foo = 5;\n% my $bar = 6;\n\n',
-        expect => '% my $foo = 5;\n% my $bar = 6;\n',
-    );
-}
-
 sub test_perl_lines_and_perl_blocks : Tests {
+    tidy(
+        desc   => 'perl lines with commented out tags',
+        source => '% # <%init>\n% # <% $foo %>\n% # <& "foo" &>\n'
+    );
     tidy(
         desc   => 'perl lines',
         source => '
@@ -179,6 +173,7 @@ sub test_perl_lines_and_perl_blocks : Tests {
 <%perl>
 if($foo  )   {
 </%perl>
+<% blargh() %>
 %my @ids = (1,2);
 <%perl>
 my $foo = 3;
@@ -194,6 +189,7 @@ my $s = 9;
 <%perl>
   if ($foo) {
 </%perl>
+<% blargh() %>
 %     my @ids = ( 1, 2 );
 <%perl>
       my $foo = 3;
@@ -208,9 +204,9 @@ my $s = 9;
 }
 
 sub test_blocks_and_newlines : Tests {
-    tidy( source => "<%perl>my \$foo=5;</%perl>", );
-    tidy( source => "<%perl>my \$foo=5;\n  </%perl>", );
-    tidy( source => "<%perl>\nmy \$foo=5;</%perl>", );
+    tidy( source => "<%perl>my \$foo=5;</%perl>" );
+    tidy( source => "<%perl>my \$foo=5;\n  </%perl>" );
+    tidy( source => "<%perl>\nmy \$foo=5;</%perl>" );
     tidy(
         source => "<%perl>\nmy \$foo=5;\n</%perl>",
         expect => "<%perl>\n  my \$foo = 5;\n</%perl>"
@@ -374,17 +370,26 @@ sub test_perltidy_argv : Tests {
 }
 
 sub test_blank_lines : Tests {
+    tidy( source => '\n%\n' );
     tidy( source => '%' );
     tidy( source => '\n' );
-    tidy( source => '\n%\n' );
+    tidy( source => '\n\n' );
     tidy( source => '% foo();' );
     tidy( source => '\n% foo();\n' );
     tidy( source => '% foo()\n%' );
     tidy( source => '\n% foo()\n%\n' );
+    tidy( source => '  Hello\n\n\n  Goodbye\n' );
     tidy(
-        desc   => '2 blank %-lines before and after',
-        source => '\n%\n%\n% my $foo = 5;\n%\n% my $bar = 6;\n%\n%\n',
+        source => '<%perl>\nmy $foo = 5;\n\nmy $bar = 6;\n\n</%perl>',
+        expect => '<%perl>\n  my $foo = 5;\n\n  my $bar = 6;\n\n</%perl>'
     );
+    tidy( source => '\n%\n%\n% my $foo = 5;\n%\n% my $bar = 6;\n%\n%\n' );
+    tidy( source => '<%init>\nmy $foo = 5;\n</%init>\n\n' );
+    tidy( source => '% my $foo = 5;\n' );
+    tidy( source => '% my $foo = 5;' );
+    tidy( source => '% my $foo = 5;\n% my $bar = 6;\n' );
+    tidy( source => '% my $foo = 5;\n% my $bar = 6;' );
+    tidy( source => '% my $foo = 5;\n% my $bar = 6;\n\n' );
 }
 
 sub test_single_line_block : Tests {
@@ -488,6 +493,13 @@ sub test_errors : Tests {
     );
 }
 
+sub test_here_docs : Tests {
+    tidy(
+        source => '<%perl>\nmy $text = <<"END";\nblah\nblah2\nEND\nprint $text;\n</%perl>',
+        expect => '<%perl>\n  my $text = <<"END";\nblah\nblah2\nEND\n  print $text;\n</%perl>'
+    );
+}
+
 sub test_random_bugs : Tests {
     tidy(
         desc    => 'final double brace (mason 1)',
@@ -503,6 +515,16 @@ sub test_random_bugs : Tests {
 % }}
 '
     );
+    tidy(
+        desc => 'long comp call tag',
+        source =>
+          '% # <& searchFormShared, report_title => $report_title, ask_site => 1, ask_date => 1, ask_search_terms => 1, ask_result_limit => 1 &>'
+    );
+    tidy(
+        desc   => '% at beginning of line inside multi-line <% %> or <& &>',
+        source => '<& /layouts/master.mc,\n%ARGS\n&>\n<%\n%ARGS\n%>'
+    );
+
 }
 
 sub test_comprehensive : Tests {

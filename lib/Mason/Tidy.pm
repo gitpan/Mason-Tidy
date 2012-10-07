@@ -1,9 +1,8 @@
 package Mason::Tidy;
 BEGIN {
-  $Mason::Tidy::VERSION = '2.56';
+  $Mason::Tidy::VERSION = '2.57';
 }
 use File::Slurp;
-use Getopt::Long qw(GetOptionsFromArray);
 use Method::Signatures::Simple;
 use Moo;
 use Perl::Tidy qw();
@@ -41,7 +40,7 @@ method _build__is_code_block () {
 }
 
 method _build__open_block_regex () {
-    my $re = '<%(' . join( '|', $self->block_names ) . ')(\s+\w+)?>';
+    my $re = '<%(' . join( '|', $self->block_names ) . ')(\s+[\w\._-]+)?>';
     return qr/$re/;
 }
 
@@ -65,22 +64,42 @@ method mixed_block_names () {
 
 method tidy ($source) {
     my $final = $self->tidy_method($source);
-    $final .= "\n" if substr( $final, -1, 1 ) ne "\n";
     return $final;
 }
 
 method tidy_method ($source) {
     return $source if $source !~ /\S/;
+    my $final_newline = ( $source =~ /\n$/ );
+
+    my $open_block_regex = $self->_open_block_regex;
+    my $marker_prefix    = $self->_marker_prefix;
+
+    # Hide blocks other than <%perl>
+    #
+    while ( $source =~ s/($open_block_regex.*?<\/%\2>)/$self->replace_with_marker($1)/se ) { }
+
+    # Tidy Perl in <% %>
+    #
+    my $subst_tag_regex = $self->_subst_tag_regex;
+    $source =~ s/$subst_tag_regex/"<% " . $self->tidy_subst_expr($1) . " %>"/ge;
+
+    # Tidy Perl in <& &> and <&| &>
+    #
+    $source =~ s/(<&\|?)(.*?)&>/"$1 " . $self->tidy_compcall_expr($2) . " &>"/ge;
+
+    # Hide <% %> and <& &>
+    #
+    while ( $source =~ s/($open_block_regex.*?<\/%\2>)/$self->replace_with_marker($1)/se )   { }
+    while ( $source =~ s/(<(%|&\|?)(?![A-Za-z]+>).*?\2>)/$self->replace_with_marker($1)/se ) { }
 
     my @lines = split( /\n/, $source, -1 );
     pop(@lines) if @lines && $lines[-1] eq '';
     my @elements = ();
     my $add_element = sub { push( @elements, [@_] ) };
 
-    my $last_line        = scalar(@lines) - 1;
-    my $open_block_regex = $self->_open_block_regex;
-    my $mason1           = $self->mason_version == 1;
-    my $mason2           = $self->mason_version == 2;
+    my $last_line = scalar(@lines) - 1;
+    my $mason1    = $self->mason_version == 1;
+    my $mason2    = $self->mason_version == 2;
 
     for ( my $cur_line = 0 ; $cur_line <= $last_line ; $cur_line++ ) {
         my $line = $lines[$cur_line];
@@ -112,29 +131,11 @@ method tidy_method ($source) {
             my ($end_line) =
               grep { $lines[$_] =~ /^\s*<\/%perl>\s*$/ } ( $cur_line + 1 .. $last_line );
             if ($end_line) {
-                $add_element->( 'text', '<%perl>' );
+                $add_element->( 'begin_perl_block', '<%perl>' );
                 foreach my $line ( @lines[ $cur_line + 1 .. $end_line - 1 ] ) {
-                    $add_element->( 'perl_line', "$line # __perl_block" );
+                    $add_element->( 'perl_line', $line );
                 }
-                $add_element->( 'text', '</%perl>' );
-                $cur_line = $end_line;
-                next;
-            }
-        }
-
-        # Other blocks untouched
-        #
-        if ( my ($block_type) = ( $line =~ /$open_block_regex/ ) ) {
-            my $end_line;
-            foreach my $this_line ( $cur_line + 1 .. $last_line ) {
-                if ( $lines[$this_line] =~ m{</%$block_type>} ) {
-                    $end_line = $this_line;
-                    last;
-                }
-            }
-            if ($end_line) {
-                my $block_contents = join( "\n", @lines[ $cur_line .. $end_line ] );
-                $add_element->( 'block', $block_contents );
+                $add_element->( 'end_perl_block', '</%perl>' );
                 $cur_line = $end_line;
                 next;
             }
@@ -148,24 +149,35 @@ method tidy_method ($source) {
     # Create content from elements with non-perl lines as comments; perltidy;
     # reassemble list of elements from tidied perl blocks and replaced elements
     #
-    my $untidied_perl = join( "\n",
+    my $untidied_perl = "{\n"
+      . join( "\n",
         map { $_->[0] eq 'perl_line' ? trim( $_->[1] ) : $self->replace_with_perl_comment($_) }
-          @elements );
+          @elements )
+      . "\n}\n";
+    $DB::single = 1;
     $self->perltidy(
         source      => \$untidied_perl,
         destination => \my $tidied_perl,
         argv        => $self->perltidy_line_argv . " -fnl -fbl",
     );
-    if ( substr( $untidied_perl, -1, 1 ) ne "\n" && substr( $tidied_perl, -1, 1 ) eq "\n" ) {
-        substr( $tidied_perl, -1, 1 ) = "";
-    }
+    $tidied_perl =~ s/^{\n//;
+    $tidied_perl =~ s/}\n$//;
 
-    my @tidied_lines = split( /\n/, $tidied_perl, -1 );
+    my @tidied_lines = split( /\n/, substr( $tidied_perl, 0, -1 ), -1 );
     @tidied_lines = ('') if !@tidied_lines;
-    my @final_lines = ();
+    my @final_lines     = ();
+    my $perl_block_mode = 0;
+    my $standard_indent = $self->standard_line_indent();
     foreach my $line (@tidied_lines) {
         if ( my $marker = $self->marker_in_line($line) ) {
-            push( @final_lines, $self->restore($marker)->[1] );
+            my ( $type, $contents ) = @{ $self->restore($marker) };
+            push( @final_lines, $contents );
+            if ( $type eq 'begin_perl_block' ) {
+                $perl_block_mode = 1;
+            }
+            elsif ( $type eq 'end_perl_block' ) {
+                $perl_block_mode = 0;
+            }
         }
         else {
             # Convert back filter invocation
@@ -175,29 +187,33 @@ method tidy_method ($source) {
                 $line =~ s/\}\s*\#\s*__end filter/\}\}/;
             }
 
-            if ( my ($real_line) = ( $line =~ /(.*?)\s*\#\s*__perl_block/ ) ) {
-                if ( $real_line =~ /\S/ ) {
-                    my $spacer = scalar( ' ' x $self->indent_perl_block );
-                    push( @final_lines, $spacer . rtrim($real_line) );
-                }
-                else {
-                    push( @final_lines, '' );
-                }
+            $line =~ s/^\}\}/$standard_indent\}\}/;
+            if ($perl_block_mode) {
+                my $spacer = ( $line =~ /\S/ ? scalar( ' ' x $self->indent_perl_block ) : '' );
+                $line =~ s/^$standard_indent/$spacer/;
+                push( @final_lines, $line );
             }
             else {
-                push( @final_lines, "%" . ( $line =~ /\S/ ? " " : "" ) . $line );
+                my $spacer = ( $line =~ /\S/ ? ' ' : '' );
+                $line =~ s/^$standard_indent/$spacer/;
+                push( @final_lines, "%$line" );
             }
         }
     }
-    my $final = join( "\n", @final_lines );
+    my $final = join( "\n", @final_lines ) . ( $final_newline ? "\n" : "" );
+
+    # Restore <% %> and <& &> and blocks
+    #
+    while ( $final =~ s/(${marker_prefix}_\d+)/$self->restore($1)/e ) { }
 
     # Tidy content in blocks other than <%perl>
     #
     my @replacements;
     undef pos($final);
-    while ( $final =~ /$open_block_regex[\t ]*\n?/mg ) {
-        my ( $block_type, $block_args ) = ( $1, $2 );
-        my $start_pos = pos($final);
+    while ( $final =~ /^(.*)$open_block_regex[\t ]*\n?/mg ) {
+        my ( $preceding, $block_type, $block_args ) = ( $1, $2, $3 );
+        next if length($preceding) > 0 && substr( $preceding, 0, 1 ) eq '%';
+        my $start_pos = pos($final) + length($preceding);
         if ( $final =~ /(\n?[\t ]*<\/%$block_type>)/g ) {
             my $length = pos($final) - $start_pos - length($1);
             my $untidied_block_contents = substr( $final, $start_pos, $length );
@@ -225,15 +241,6 @@ method tidy_method ($source) {
         $offset += length($tidied_block_contents) - length($untidied_block_contents);
     }
 
-    # Tidy Perl in <% %> tags
-    #
-    my $subst_tag_regex = $self->_subst_tag_regex;
-    $final =~ s/$subst_tag_regex/"<% " . $self->tidy_subst_expr($1) . " %>"/ge;
-
-    # Tidy Perl in <& &> and <&| &> tags
-    #
-    $final =~ s/(<&\|?)(.*?)&>/"$1 " . $self->tidy_compcall_expr($2) . " &>"/ge;
-
     return $final;
 }
 
@@ -241,7 +248,7 @@ method tidy_subst_expr ($expr) {
     $self->perltidy(
         source      => \$expr,
         destination => \my $tidied_expr,
-        argv        => $self->perltidy_tag_argv,
+        argv        => $self->perltidy_tag_argv . " -fnl -fbl",
     );
     return trim($tidied_expr);
 }
@@ -254,7 +261,7 @@ method tidy_compcall_expr ($expr) {
     $self->perltidy(
         source      => \$expr,
         destination => \my $tidied_expr,
-        argv        => $self->perltidy_tag_argv,
+        argv        => $self->perltidy_tag_argv . " -fnl -fbl",
     );
     if ($path) {
         substr( $tidied_expr, 0, length($path) + 2 ) = $path;
@@ -285,7 +292,7 @@ method handle_block ($block_type, $block_args, $block_contents) {
 }
 
 method replace_with_perl_comment ($obj) {
-    return "# " . $self->replace_with_marker($obj);
+    return "# _LINE_" . $self->replace_with_marker($obj);
 }
 
 method replace_with_marker ($obj) {
@@ -296,17 +303,19 @@ method replace_with_marker ($obj) {
 
 method marker_in_line ($line) {
     my $marker_prefix = $self->_marker_prefix;
-    if ( my ($marker) = ( $line =~ /(${marker_prefix}_\d+)/ ) ) {
+    if ( my ($marker) = ( $line =~ /\s*_LINE_(${marker_prefix}_\d+)/ ) ) {
         return $marker;
     }
     return undef;
 }
 
 method restore ($marker) {
-    return $self->{markers}->{$marker};
+    my $retval = $self->{markers}->{$marker};
+    return $retval;
 }
 
 method perltidy (%params) {
+    $params{argv} ||= '';
     $params{argv} .= ' ' . $self->perltidy_argv;
     my $errorfile;
     Perl::Tidy::perltidy(
@@ -316,6 +325,18 @@ method perltidy (%params) {
         %params
     );
     die $errorfile if $errorfile;
+}
+
+method standard_line_indent () {
+    my $source = "{\nfoo();\n}\n";
+    $self->perltidy(
+        source      => \$source,
+        destination => \my $destination,
+        argv        => $self->perltidy_line_argv . " -fnl -fbl"
+    );
+    my ($indent) = ( $destination =~ /^(\s*)foo/m )
+      or die "cannot determine standard indent";
+    return $indent;
 }
 
 func perltidy_prefilter ($buf) {
@@ -357,7 +378,7 @@ Mason::Tidy - Engine for masontidy
 
 =head1 VERSION
 
-version 2.56
+version 2.57
 
 =head1 SYNOPSIS
 
@@ -405,12 +426,6 @@ C<indent_perl_block> here).
 
 Tidy component source I<$source> and return the tidied result. Throw fatal
 error if source cannot be tidied (e.g. invalid syntax).
-
-=item get_options ($argv, $params)
-
-Use C<Getopt::Long::GetOptions> to parse the options in I<$argv> and place
-params in I<$params> appropriate for passing into the constructor. Returns the
-return value of C<GetOptions>.
 
 =back
 

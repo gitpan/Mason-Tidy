@@ -9,7 +9,7 @@ use ExtUtils::MakeMaker 6.30;
 
 
 my %WriteMakefileArgs = (
-  'ABSTRACT' => 'My great module',
+  'ABSTRACT' => 'Tidy Perl code in Mason templates',
   'AUTHOR' => 'Jonathan Swartz <swartz@pobox.com>',
   'BUILD_REQUIRES' => {
     'Test::Class::Most' => '0'
@@ -34,7 +34,7 @@ my %WriteMakefileArgs = (
     'Perl::Tidy' => '0',
     'Pod::Usage' => '0'
   },
-  'VERSION' => '2.56',
+  'VERSION' => '2.57',
   'test' => {
     'TESTS' => 't/*.t'
   }
